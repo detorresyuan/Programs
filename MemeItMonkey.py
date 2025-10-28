@@ -38,7 +38,7 @@ class MemeItMonke:
                             borderwidth = 2)
         self.mainCanvas.pack(pady = 35, padx = 20)
         self.mainButton = Button(parentwindow, width = 20, relief = RAISED, bg = "#FFFFFF", 
-                                 text = "MONKE", fg = "#000000", command = self.imageRandomizer)
+                                 text = "MONKE", fg = "#292727", command = self.imageRandomizer)
         self.mainButton.pack(pady = 2)
     
     def imageRandomizer(self):

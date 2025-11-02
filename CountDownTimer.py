@@ -37,7 +37,6 @@ class CountDownApp:
         self.endButton = Button(parentwindow, width = 20, bg = "#F3F3F3",
                              fg = "#0E0E0E", text = "Cancel", relief = RAISED, command = self.resetTimer)
         self.endButton.pack(pady = 5)
-    
 
     def startCountDown(self):
 

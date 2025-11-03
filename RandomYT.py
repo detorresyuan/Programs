@@ -105,9 +105,10 @@ class RandomYoutubeApp:
         self.searchResults = self.searchQuery()
 
         if self.searchResults is None:
+            self.lastSearchResults = None
             return
-        self.title, self.thumbnail, self.videoID = self.getRandomVideo(self.searchResults)
-        
+        self.lastSearchResults = self.searchResults
+        self.title, self.thumbnail, self.videoID = self.getRandomVideo(self.lastSearchResults)
         if self.title is None:
             return
         self.updateDisplay(self.title, self.thumbnail, self.videoID)
@@ -132,9 +133,17 @@ class RandomYoutubeApp:
         self.insertVideoId = self.mainCanvas.insert(self.updateDisplay())
         self.insertVideoId.place(y = 10)
 
-    # def nextFunction(self):
+    def nextFunction(self):
+        if not hasattr(self, "lastSearchResults") or self.lastSearchResults is None:
+            messagebox.showinfo("Error, Please GET first")
+            return
+        title, thumbnail, videoID = self.getRandomVideo(self.lastSearchResults)
 
-    # def prevFunction(self):
+        if title is None:
+            return
+        self.updateDisplay(title, thumbnail, videoID)
+     
+    #def prevFunction(self):
 
 if __name__ == "__main__":
     main()

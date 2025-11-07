@@ -31,11 +31,11 @@ class RandomYoutubeApp:
             messagebox.showerror("Configuration Error", 
                                 "API Key not found. Please set the 'YOUTUBE_API_KEY' environment variable.")
             sys.exit()
-
-        self.YTSearch = self.searchedTopic
+        self.searchedTopic = self.searchQuery()
         self.YTApiServiceName = "youtube"
         self.YTAPiVer = "v3"
         self.maxSearchResults = 50
+        self.updateDisplay = self.displayRandomVideo
 
         try:
             self.youtube = build(self.YTApiServiceName, self.YTAPiVer, 
@@ -45,20 +45,20 @@ class RandomYoutubeApp:
             sys.exit()
 
         self.YTlist = []
-        self.newYTlist = []
+        self.currentIndex = -1
         self.canvasH = 620
         self.canvasW = 1100
         self.mainCanvas = Canvas(parentwindow, height = self.canvasH, width = self.canvasW,
                             borderwidth = 2, bg = "#414141")
         self.mainCanvas.pack(pady = 30, padx = 20)
         self.getButton = Button(parentwindow, relief = RAISED, width = 10, bg = "#DBDBDB",
-                                text = "GET", fg = "#1F1F1F")
+                                text = "GET", fg = "#1F1F1F", command = self.handlerOne)
         self.getButton.place(y = 657, x = 650)
         self.nextButton = Button(parentwindow, relief = RAISED, width = 10, bg = "#DBDBDB",
-                                text = "->", fg = "#1F1F1F")
+                                text = "->", fg = "#1F1F1F", command = self.nextFunction)
         self.nextButton.place(y = 657, x = 735)
         self.prevButton = Button(parentwindow, relief = RAISED, width = 10, bg = "#DBDBDB",
-                                text = "<-", fg = "#1F1F1F")
+                                text = "<-", fg = "#1F1F1F", command = self.prevFunction)
         self.prevButton.place(y = 657, x = 565)
         self.searchBar = Entry(parentwindow, width = 40, bg = "#FFFFFF", fg = "#000000",
                                borderwidth = 2)
@@ -112,12 +112,15 @@ class RandomYoutubeApp:
         if self.title is None:
             return
         self.updateDisplay(self.title, self.thumbnail, self.videoID)
+        self.YTlist.append(self.gotVideo)
+        self.currentIndex = len(self.YTlist) - 1
+        self.updateDisplay()
 
     def loadImage(self):
         
         for self.filename in self.YTlist:
-            rawImage = cv2.resize(rawImage, (1100, 620))
-            self.pilImage = Image.fromarray(self.YTlist)
+            self.rawImage = cv2.resize(self.rawImage, (1100, 620))
+            self.pilImage = Image.fromarray(self.rawImage)
             self.photo = ImageTk.PhotoImage(self.pilImage)
             self.photo.append(self.newYTlist)
 
@@ -126,11 +129,11 @@ class RandomYoutubeApp:
         self.master.myImage = self.updateDisplay()
         self.mainCanvas.create_image(self.canvasH // 2,\
                                      self.canvasW // 2, 
-                                     image = self.updateDisplay(),
+                                     image = self.master.myImage,
                                      anchor = CENTER)
-        self.insertMainTitle = self.mainCanvas.insert(self.updateDisplay())
+        self.insertMainTitle = self.mainCanvas.create_arc(self.updateDisplay())
         self.insertMainTitle.pack(pady = 10)
-        self.insertVideoId = self.mainCanvas.insert(self.updateDisplay())
+        self.insertVideoId = self.mainCanvas.create_text(self.updateDisplay())
         self.insertVideoId.place(y = 10)
 
     def nextFunction(self):
@@ -138,12 +141,22 @@ class RandomYoutubeApp:
             messagebox.showinfo("Error, Please GET first")
             return
         title, thumbnail, videoID = self.getRandomVideo(self.lastSearchResults)
+        self.currentIndex = (self.currentIndex + 1) % len(self.YTlist)
 
         if title is None:
             return
         self.updateDisplay(title, thumbnail, videoID)
      
-    #def prevFunction(self):
+    def prevFunction(self):
+        if not hasattr(self, "lastSearchResults") or self.lastSearchResults is None:
+            messagebox.showinfo("Error, Please GET first")
+            return
+        title, thumbnail, videoID = self.getRandomVideo(self.lastSearchResults)
+        self.currentIndex = (self.currentIndex - 1) % len(self.YTlist)
+
+        if title is None:
+            return
+        self.updateDisplay(title, thumbnail, videoID)
 
 if __name__ == "__main__":
     main()

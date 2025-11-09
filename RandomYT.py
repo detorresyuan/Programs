@@ -7,14 +7,17 @@ import requests
 import io
 import os
 import sys
-import cv2
 
 def mainWindow():
     window = Tk()
     window.title("Random Youtube Video Fetcher")
     window.geometry("1500x900")
-    icon = PhotoImage(file = "niga.png")
-    window.iconphoto(True, icon)
+    try:
+        icon = PhotoImage(file = "niga.png")
+        window.iconphoto(True, icon)
+    except Exception:
+        # ignore missing icon
+        pass
     return window
 
 def main():
@@ -25,32 +28,35 @@ def main():
 class RandomYoutubeApp:
     def __init__(self, parentwindow):
         self.master = parentwindow
-        self.apiKey = os.environ.get("YOUTUBE_API_KEY")
-
+        # prefer environment variable, fallback to any hardcoded key if present
+        self.apiKey = os.getenv("YOUTUBE_API_KEY") 
         if not self.apiKey:
             messagebox.showerror("Configuration Error", 
                                 "API Key not found. Please set the 'YOUTUBE_API_KEY' environment variable.")
             sys.exit()
-        self.searchedTopic = self.searchQuery()
+
         self.YTApiServiceName = "youtube"
         self.YTAPiVer = "v3"
         self.maxSearchResults = 50
-        self.updateDisplay = self.displayRandomVideo
 
         try:
-            self.youtube = build(self.YTApiServiceName, self.YTAPiVer, 
-                            developerKey = self.apiKey)
+            self.youtube = build(self.YTApiServiceName, self.YTAPiVer, developerKey = self.apiKey)
         except Exception as e:
-            print(f"Error initialzing Youtube Service: {e}")
+            messagebox.showerror("Youtube Init Error", f"Error initializing Youtube Service: {e}")
             sys.exit()
 
+        # storage for videos (dicts from API) and current index
         self.YTlist = []
         self.currentIndex = -1
+
+        # canvas sizes
         self.canvasH = 620
         self.canvasW = 1100
         self.mainCanvas = Canvas(parentwindow, height = self.canvasH, width = self.canvasW,
                             borderwidth = 2, bg = "#414141")
         self.mainCanvas.pack(pady = 30, padx = 20)
+
+        # buttons and search
         self.getButton = Button(parentwindow, relief = RAISED, width = 10, bg = "#DBDBDB",
                                 text = "GET", fg = "#1F1F1F", command = self.handlerOne)
         self.getButton.place(y = 657, x = 650)
@@ -65,98 +71,112 @@ class RandomYoutubeApp:
         self.searchBar.insert(0, "Enter a Topic")
         self.searchBar.place(y = 10, x = 572)
 
+        # keep reference to PhotoImage to prevent GC
+        self._photo_image = None
+
     def searchQuery(self):
-        self.userInputSearch = self.searchBar.get()
+        self.userInputSearch = self.searchBar.get().strip()
         try:
-            if not self.userInputSearch or self.userInputSearch.isspace():
-                return
+            if not self.userInputSearch:
+                return None
             self.searchResponse = self.youtube.search().list(
                 q = self.userInputSearch,
-                part = "id, snippet",
+                part = "id,snippet",
                 type = "video",
                 maxResults = self.maxSearchResults
             ).execute()
             return self.searchResponse
         except Exception as e:
-            messagebox.showerror(f"Failure in fetching Youtube Data {e}")
+            messagebox.showerror("Youtube Search Error", f"Failure in fetching Youtube Data: {e}")
             return None
-    
-    def getRandomVideo(self, searchResults):
+
+    def pickRandomFromResults(self, searchResults):
         if searchResults is None or "items" not in searchResults:
             messagebox.showinfo("No results")
-            return None, None, None
-        self.allItems = searchResults.get("items", [])
-        self.videos = [item for item in self.allItems if item["id"]["kind"] == "youtube#video"]
-        if not self.videos:
-            messagebox.showinfo("No Videos")
-            return None, None, None
-        self.gotVideo = random.choice(self.videos) 
+            return None
+        items = searchResults.get("items", [])
+        videos = [item for item in items if item.get("id", {}).get("kind") == "youtube#video"]
+        if not videos:
+            messagebox.showinfo("No Videos Found")
+            return None
+        return random.choice(videos)
+
+    def download_and_prepare_image(self, url):
         try:
-            self.title = self.gotVideo["snippet"]["title"]
-            self.thumbnail = self.gotVideo["snippet"]["thumbnails"]["high"]["url"]
-            self.videoID = self.gotVideo["id"]["videoId"]
-            self.YTlist.append(self.gotVideo)
-        except KeyError as e:
-            messagebox.showerror(f"Error in extraction of: {e}")
-            return None, None, None
-        return self.title, self.thumbnail, self.videoID
-    
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+            img = img.resize((self.canvasW, self.canvasH), Image.LANCZOS)
+            return ImageTk.PhotoImage(img)
+        except Exception:
+            return None
+
+    def displayVideo(self, index):
+        if index < 0 or index >= len(self.YTlist):
+            return
+        video = self.YTlist[index]
+        title = video["snippet"]["title"]
+        thumbnail_url = video["snippet"]["thumbnails"].get("high", {}).get("url") or \
+                        video["snippet"]["thumbnails"].get("default", {}).get("url")
+        video_id = video["id"].get("videoId") or video["id"].get("channelId") or ""
+
+        # clear canvas
+        self.mainCanvas.delete("all")
+
+        # download and show thumbnail
+        img = None
+        if thumbnail_url:
+            img = self.download_and_prepare_image(thumbnail_url)
+        if img:
+            self._photo_image = img  # keep reference
+            self.mainCanvas.create_image(self.canvasW//2, self.canvasH//2, image=self._photo_image, anchor=CENTER)
+        else:
+            # placeholder rectangle if no image
+            self.mainCanvas.create_rectangle(0, 0, self.canvasW, self.canvasH, fill="#222222")
+
+        # draw title and id
+        # title at bottom
+        self.mainCanvas.create_text(self.canvasW//2, self.canvasH - 30, text=title, fill="white", font=("Arial", 18), width=self.canvasW-20)
+        # video id at top-left
+        self.mainCanvas.create_text(10, 10, text=f"Video ID: {video_id}", fill="white", anchor="nw", font=("Arial", 10))
+
     def handlerOne(self):
-        self.searchResults = self.searchQuery()
-
-        if self.searchResults is None:
-            self.lastSearchResults = None
+        searchResults = self.searchQuery()
+        if searchResults is None:
             return
-        self.lastSearchResults = self.searchResults
-        self.title, self.thumbnail, self.videoID = self.getRandomVideo(self.lastSearchResults)
-        if self.title is None:
+        picked = self.pickRandomFromResults(searchResults)
+        if picked is None:
             return
-        self.updateDisplay(self.title, self.thumbnail, self.videoID)
-        self.YTlist.append(self.gotVideo)
-        self.currentIndex = len(self.YTlist) - 1
-        self.updateDisplay()
-
-    def loadImage(self):
-        
-        for self.filename in self.YTlist:
-            self.rawImage = cv2.resize(self.rawImage, (1100, 620))
-            self.pilImage = Image.fromarray(self.rawImage)
-            self.photo = ImageTk.PhotoImage(self.pilImage)
-            self.photo.append(self.newYTlist)
-
-            
-    def displayRandomVideo(self):
-        self.master.myImage = self.updateDisplay()
-        self.mainCanvas.create_image(self.canvasH // 2,\
-                                     self.canvasW // 2, 
-                                     image = self.master.myImage,
-                                     anchor = CENTER)
-        self.insertMainTitle = self.mainCanvas.create_arc(self.updateDisplay())
-        self.insertMainTitle.pack(pady = 10)
-        self.insertVideoId = self.mainCanvas.create_text(self.updateDisplay())
-        self.insertVideoId.place(y = 10)
+        # reset list and add first picked
+        self.YTlist = [picked]
+        self.currentIndex = 0
+        self.displayVideo(self.currentIndex)
 
     def nextFunction(self):
-        if not hasattr(self, "lastSearchResults") or self.lastSearchResults is None:
-            messagebox.showinfo("Error, Please GET first")
+        if not self.YTlist:
+            messagebox.showinfo("Error", "Please GET first")
             return
-        title, thumbnail, videoID = self.getRandomVideo(self.lastSearchResults)
-        self.currentIndex = (self.currentIndex + 1) % len(self.YTlist)
+        # If there are more cached videos, go next; otherwise pick a new random and append
+        if self.currentIndex < len(self.YTlist) - 1:
+            self.currentIndex += 1
+        else:
+            # try to pick another from the last search results if available
+            try:
+                last_search = getattr(self, "searchResponse", None)
+                picked = self.pickRandomFromResults(last_search)
+                if picked:
+                    self.YTlist.append(picked)
+                    self.currentIndex = len(self.YTlist) - 1
+            except Exception:
+                pass
+        self.displayVideo(self.currentIndex)
 
-        if title is None:
-            return
-        self.updateDisplay(title, thumbnail, videoID)
-     
     def prevFunction(self):
-        if not hasattr(self, "lastSearchResults") or self.lastSearchResults is None:
-            messagebox.showinfo("Error, Please GET first")
+        if not self.YTlist:
+            messagebox.showinfo("Error", "Please GET first")
             return
-        title, thumbnail, videoID = self.getRandomVideo(self.lastSearchResults)
         self.currentIndex = (self.currentIndex - 1) % len(self.YTlist)
-
-        if title is None:
-            return
-        self.updateDisplay(title, thumbnail, videoID)
+        self.displayVideo(self.currentIndex)
 
 if __name__ == "__main__":
     main()
